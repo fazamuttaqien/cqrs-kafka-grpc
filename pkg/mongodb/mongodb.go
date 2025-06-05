@@ -24,8 +24,8 @@ type Config struct {
 	Db       string `mapstructure:"db"`
 }
 
-func New(cfg *Config) (*mongo.Client, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+func NewMongoConnection(ctx context.Context, cfg *Config) (*mongo.Client, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	client, err := mongo.Connect(
