@@ -4,10 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fazamuttaqien/cqrs-kafka-grpc/docs"
+	// "github.com/fazamuttaqien/cqrs-kafka-grpc/docs"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
-	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/gofiber/swagger"
@@ -33,30 +32,29 @@ func (s *server) runHttpServer() error {
 
 	s.mapRoutes()
 
-	return s.fiber.Listen(s.cfg.Http.Port)
+	return s.fiber.Listen(s.config.Http.Port)
 }
 
 func (s *server) mapRoutes() {
-    // Setup Swagger
-    docs.SwaggerInfo.Version = "1.0"
-    docs.SwaggerInfo.Title = "API Gateway"
-    docs.SwaggerInfo.Description = "API Gateway CQRS microservices."
-    docs.SwaggerInfo.BasePath = "/api/v1"
+	// Setup Swagger
+	// docs.SwaggerInfo.Version = "1.0"
+	// docs.SwaggerInfo.Title = "API Gateway"
+	// docs.SwaggerInfo.Description = "API Gateway CQRS microservices."
+	// docs.SwaggerInfo.BasePath = "/api/v1"
 
-    // Swagger route
-    s.fiber.Get("/swagger/*", swagger.HandlerDefault)
+	// Swagger route
+	s.fiber.Get("/swagger/*", swagger.HandlerDefault)
 
-    // Middlewares
-    s.fiber.Use(s.mw.RequestLoggerMiddleware)
-    s.fiber.Use(recover.New(recover.Config{
-        StackSize:  stackSize,
-        EnableStackTrace: false,
-    }))
-    s.fiber.Use(requestid.New())
-    s.fiber.Use(compress.New(compress.Config{
-        Level: compress.Level(gzipLevel),
-        Next: func(c *fiber.Ctx) bool {
-            return strings.Contains(c.Path(), "swagger")
-        },
-    }))
+	// Middlewares
+	s.fiber.Use(s.middlewareManager.RequestLoggerMiddleware)
+	s.fiber.Use(recover.New(recover.Config{
+		EnableStackTrace: false,
+	}))
+	s.fiber.Use(requestid.New())
+	s.fiber.Use(compress.New(compress.Config{
+		Level: compress.Level(gzipLevel),
+		Next: func(c *fiber.Ctx) bool {
+			return strings.Contains(c.Path(), "swagger")
+		},
+	}))
 }

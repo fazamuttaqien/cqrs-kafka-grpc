@@ -18,8 +18,8 @@ import (
 
 type mongoRepository struct {
 	log    logger.Logger
-	cfg    *config.Config
-	mg     *mongo.Client
+	config *config.Config
+	mongo  *mongo.Client
 	tracer trace.Tracer
 }
 
@@ -29,14 +29,14 @@ func NewMongoRepository(
 	mg *mongo.Client,
 	tracer trace.Tracer,
 ) *mongoRepository {
-	return &mongoRepository{log: log, cfg: cfg, mg: mg, tracer: tracer}
+	return &mongoRepository{log: log, config: cfg, mongo: mg, tracer: tracer}
 }
 
 func (p *mongoRepository) CreateProduct(ctx context.Context, product *models.Product) (*models.Product, error) {
 	ctx, span := p.tracer.Start(ctx, "mongoRepository.CreateProduct")
 	defer span.End()
 
-	collection := p.mg.Database(p.cfg.Mongo.Db).Collection(p.cfg.MongoCollections.Products)
+	collection := p.mongo.Database(p.config.Mongo.Db).Collection(p.config.MongoCollections.Products)
 
 	_, err := collection.InsertOne(ctx, product)
 	if err != nil {
@@ -51,7 +51,7 @@ func (p *mongoRepository) UpdateProduct(ctx context.Context, product *models.Pro
 	ctx, span := p.tracer.Start(ctx, "mongoRepository.UpdateProduct")
 	defer span.End()
 
-	collection := p.mg.Database(p.cfg.Mongo.Db).Collection(p.cfg.MongoCollections.Products)
+	collection := p.mongo.Database(p.config.Mongo.Db).Collection(p.config.MongoCollections.Products)
 
 	ops := options.FindOneAndUpdate()
 	ops.SetReturnDocument(options.After)
@@ -70,7 +70,7 @@ func (p *mongoRepository) GetProductById(ctx context.Context, uuid uuid.UUID) (*
 	ctx, span := p.tracer.Start(ctx, "mongoRepository.GetProductById")
 	defer span.End()
 
-	collection := p.mg.Database(p.cfg.Mongo.Db).Collection(p.cfg.MongoCollections.Products)
+	collection := p.mongo.Database(p.config.Mongo.Db).Collection(p.config.MongoCollections.Products)
 
 	var product models.Product
 	if err := collection.FindOne(ctx, bson.M{"_id": uuid.String()}).Decode(&product); err != nil {
@@ -85,7 +85,7 @@ func (p *mongoRepository) DeleteProduct(ctx context.Context, uuid uuid.UUID) err
 	ctx, span := p.tracer.Start(ctx, "mongoRepository.DeleteProduct")
 	defer span.End()
 
-	collection := p.mg.Database(p.cfg.Mongo.Db).Collection(p.cfg.MongoCollections.Products)
+	collection := p.mongo.Database(p.config.Mongo.Db).Collection(p.config.MongoCollections.Products)
 
 	return collection.FindOneAndDelete(ctx, bson.M{"_id": uuid.String()}).Err()
 }
@@ -94,7 +94,7 @@ func (p *mongoRepository) Search(ctx context.Context, search string, pagination 
 	ctx, span := p.tracer.Start(ctx, "mongoRepository.Search")
 	defer span.End()
 
-	collection := p.mg.Database(p.cfg.Mongo.Db).Collection(p.cfg.MongoCollections.Products)
+	collection := p.mongo.Database(p.config.Mongo.Db).Collection(p.config.MongoCollections.Products)
 
 	filter := bson.D{
 		{Key: "$or", Value: bson.A{
@@ -115,7 +115,7 @@ func (p *mongoRepository) Search(ctx context.Context, search string, pagination 
 	limit := int64(pagination.GetLimit())
 	skip := int64(pagination.GetOffset())
 	cursor, err := collection.Find(ctx, filter, &options.FindOptions{
-		Skip: &skip,
+		Skip:  &skip,
 		Limit: &limit,
 	})
 	if err != nil {

@@ -3,9 +3,9 @@ package logger
 import (
 	"os"
 	"time"
-	
+
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/constants"
-	
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -255,20 +255,20 @@ func (l *appLogger) GrpcClientInterceptorLogger(method string, req, reply interf
 func (l *appLogger) KafkaProcessMessage(topic string, partition int, message string, workerID int, offset int64, time time.Time) {
 	l.logger.Debug(
 		"Processing Kafka message",
-		zap.String(constants.Topic, topic),
-		zap.Int(constants.Partition, partition),
-		zap.String(constants.Message, message),
-		zap.Int(constants.WorkerID, workerID),
-		zap.Int64(constants.Offset, offset),
-		zap.Time(constants.Time, time),
+		zap.String(constants.TOPIC, topic),
+		zap.Int(constants.PARTITION, partition),
+		zap.String(constants.MESSAGE, message),
+		zap.Int(constants.WORKERID, workerID),
+		zap.Int64(constants.OFFSET, offset),
+		zap.Time(constants.TIME, time),
 	)
 }
 
 func (l *appLogger) KafkaLogCommittedMessage(topic string, partition int, offset int64) {
 	l.logger.Info(
 		"Committed Kafka message",
-		zap.String(constants.Topic, topic),
-		zap.Int(constants.Partition, partition),
-		zap.Int64(constants.Offset, offset),
+		zap.String(constants.TOPIC, topic),
+		zap.Int(constants.PARTITION, partition),
+		zap.Int64(constants.OFFSET, offset),
 	)
 }

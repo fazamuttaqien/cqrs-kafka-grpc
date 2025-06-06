@@ -32,7 +32,7 @@ func StartHttpServerTracerSpan(c *fiber.Ctx, operationName string) (context.Cont
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
 			semconv.HTTPMethod(c.Method()),
-			semconv.HTTPRoute(c.OriginalURL()),
+			semconv.HTTPURL(c.OriginalURL()),
 			semconv.HTTPRoute(c.Route().Path),
 		),
 	)

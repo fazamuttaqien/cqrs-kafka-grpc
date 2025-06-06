@@ -8,7 +8,7 @@ import (
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	
+
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
@@ -26,7 +26,7 @@ const (
 )
 
 func (s *server) newReaderGrpcServer() (func() error, *grpc.Server, error) {
-	l, err := net.Listen("tcp", s.cfg.GRPC.Port)
+	l, err := net.Listen("tcp", s.config.GRPC.Port)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "net.Listen")
 	}
@@ -43,21 +43,21 @@ func (s *server) newReaderGrpcServer() (func() error, *grpc.Server, error) {
 			grpc_opentracing.UnaryServerInterceptor(),
 			grpc_prometheus.UnaryServerInterceptor,
 			grpc_recovery.UnaryServerInterceptor(),
-			s.im.Logger,
+			s.interceptorManager.Logger,
 		),
 		),
 	)
 
-	readerGrpcService := readerGrpc.NewReaderGrpcService(s.log, s.cfg, s.v, s.ps, s.metrics)
+	readerGrpcService := readerGrpc.NewReaderGrpcService(s.log, s.config, s.validate, s.productService, s.metrics)
 	pb_reader.RegisterReaderServiceServer(grpcServer, readerGrpcService)
 	grpc_prometheus.Register(grpcServer)
 
-	if s.cfg.GRPC.Development {
+	if s.config.GRPC.Development {
 		reflection.Register(grpcServer)
 	}
 
 	go func() {
-		s.log.Infof("Reader gRPC server is listening on port: %s", s.cfg.GRPC.Port)
+		s.log.Infof("Reader gRPC server is listening on port: %s", s.config.GRPC.Port)
 		s.log.Fatal(grpcServer.Serve(l))
 	}()
 

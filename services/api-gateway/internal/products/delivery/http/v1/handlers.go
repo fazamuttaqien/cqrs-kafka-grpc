@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/constants"
-	httpErrors "github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/http/errors"
+	http_errors "github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/http/errors"
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/logger"
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/tracing"
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/utils"
@@ -15,36 +15,45 @@ import (
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/services/api-gateway/internal/products/commands"
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/services/api-gateway/internal/products/queries"
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/services/api-gateway/internal/products/service"
-	"github.com/gofiber/fiber/v2"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/go-playground/validator"
+	"github.com/gofiber/fiber/v2"
+	"github.com/opentracing/opentracing-go"
 	"github.com/satori/go.uuid"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type productsHandlers struct {
-	group   *fiber.Group
-	log     logger.Logger
-	mw      middlewares.MiddlewareManager
-	cfg     *config.Config
-	ps      *service.ProductService
-	v       *validator.Validate
-	metrics *metrics.ApiGatewayMetrics
-	tracer  trace.Tracer
+	group             *fiber.Group
+	log               logger.Logger
+	middlewareManager middlewares.MiddlewareManager
+	config            *config.Config
+	productService    *service.ProductService
+	validate          *validator.Validate
+	metrics           *metrics.ApiGatewayMetrics
+	tracer            trace.Tracer
 }
 
 func NewProductsHandlers(
 	group *fiber.Group,
 	log logger.Logger,
-	mw middlewares.MiddlewareManager,
-	cfg *config.Config,
-	ps *service.ProductService,
-	v *validator.Validate,
+	middlewareManager middlewares.MiddlewareManager,
+	config *config.Config,
+	productService *service.ProductService,
+	validate *validator.Validate,
 	metrics *metrics.ApiGatewayMetrics,
 	tracer trace.Tracer,
 ) *productsHandlers {
 	return &productsHandlers{
-		group: group, log: log, mw: mw, cfg: cfg, ps: ps, v: v, metrics: metrics, tracer: tracer}
+		group:             group,
+		log:               log,
+		middlewareManager: middlewareManager,
+		config:            config,
+		productService:    productService,
+		validate:          validate,
+		metrics:           metrics,
+		tracer:            tracer,
+	}
 }
 
 // CreateProduct
@@ -66,20 +75,20 @@ func (h *productsHandlers) CreateProduct() fiber.Handler {
 		if err := c.BodyParser(createDto); err != nil {
 			h.log.WarnMsg("Bind", err)
 			h.traceErr(span, err)
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
 		createDto.ProductID = uuid.NewV4()
-		if err := h.v.StructCtx(ctx, createDto); err != nil {
+		if err := h.validate.StructCtx(ctx, createDto); err != nil {
 			h.log.WarnMsg("validate", err)
 			h.traceErr(span, err)
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
-		if err := h.ps.Commands.CreateProduct.Handle(ctx, commands.NewCreateProductCommand(createDto)); err != nil {
+		if err := h.productService.Commands.CreateProduct.Handle(ctx, commands.NewCreateProductCommand(createDto)); err != nil {
 			h.log.WarnMsg("CreateProduct", err)
 			h.metrics.ErrorHttpRequests.Inc()
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
 		h.metrics.SuccessHttpRequests.Inc()
@@ -107,15 +116,15 @@ func (h *productsHandlers) GetProductByID() fiber.Handler {
 		if err != nil {
 			h.log.WarnMsg("uuid.FromString", err)
 			h.traceErr(span, err)
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
 		query := queries.NewGetProductByIdQuery(productUUID)
-		response, err := h.ps.Queries.GetProductById.Handle(ctx, query)
+		response, err := h.productService.Queries.GetProductById.Handle(ctx, query)
 		if err != nil {
 			h.log.WarnMsg("GetProductById", err)
 			h.metrics.ErrorHttpRequests.Inc()
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
 		h.metrics.SuccessHttpRequests.Inc()
@@ -141,14 +150,14 @@ func (h *productsHandlers) SearchProduct() fiber.Handler {
 		ctx, span := tracing.StartHttpServerTracerSpan(c, "productsHandlers.SearchProduct")
 		defer span.End()
 
-		pq := utils.NewPaginationFromQueryParams(c.QueryParam(constants.Size), c.QueryParam(constants.Page))
+		pq := utils.NewPaginationFromQueryParams(c.QueryParam(constants.Size), c.QueryParam(constants.PAGE))
 
-		query := queries.NewSearchProductQuery(c.QueryParam(constants.Search), pq)
-		response, err := h.ps.Queries.SearchProduct.Handle(ctx, query)
+		query := queries.NewSearchProductQuery(c.QueryParam(constants.SEARCH), pq)
+		response, err := h.productService.Queries.SearchProduct.Handle(ctx, query)
 		if err != nil {
 			h.log.WarnMsg("SearchProduct", err)
 			h.metrics.ErrorHttpRequests.Inc()
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
 		h.metrics.SuccessHttpRequests.Inc()
@@ -176,26 +185,26 @@ func (h *productsHandlers) UpdateProduct() fiber.Handler {
 		if err != nil {
 			h.log.WarnMsg("uuid.FromString", err)
 			h.traceErr(span, err)
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
 		updateDto := &dto.UpdateProductDto{ProductID: productUUID}
 		if err := c.BodyParser(updateDto); err != nil {
 			h.log.WarnMsg("Bind", err)
 			h.traceErr(span, err)
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
-		if err := h.v.StructCtx(ctx, updateDto); err != nil {
+		if err := h.validate.StructCtx(ctx, updateDto); err != nil {
 			h.log.WarnMsg("validate", err)
 			h.traceErr(span, err)
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
-		if err := h.ps.Commands.UpdateProduct.Handle(ctx, commands.NewUpdateProductCommand(updateDto)); err != nil {
+		if err := h.productService.Commands.UpdateProduct.Handle(ctx, commands.NewUpdateProductCommand(updateDto)); err != nil {
 			h.log.WarnMsg("UpdateProduct", err)
 			h.metrics.ErrorHttpRequests.Inc()
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
 		h.metrics.SuccessHttpRequests.Inc()
@@ -223,13 +232,13 @@ func (h *productsHandlers) DeleteProduct() fiber.Handler {
 		if err != nil {
 			h.log.WarnMsg("uuid.FromString", err)
 			h.traceErr(span, err)
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
-		if err := h.ps.Commands.DeleteProduct.Handle(ctx, commands.NewDeleteProductCommand(productUUID)); err != nil {
+		if err := h.productService.Commands.DeleteProduct.Handle(ctx, commands.NewDeleteProductCommand(productUUID)); err != nil {
 			h.log.WarnMsg("DeleteProduct", err)
 			h.metrics.ErrorHttpRequests.Inc()
-			return httpErrors.ErrorCtxResponse(c, err, h.cfg.Http.DebugErrorsResponse)
+			return http_errors.ErrorCtxResponse(c, err, h.config.Http.DebugErrorsResponse)
 		}
 
 		h.metrics.SuccessHttpRequests.Inc()

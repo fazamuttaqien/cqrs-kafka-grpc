@@ -16,16 +16,16 @@ import (
 func (s *server) runHealthCheck(ctx context.Context) {
 	health := healthcheck.NewHandler()
 
-	health.AddReadinessCheck(s.cfg.ServiceName, healthcheck.AsyncWithContext(ctx, func() error {
-		if s.cfg != nil {
+	health.AddReadinessCheck(s.config.ServiceName, healthcheck.AsyncWithContext(ctx, func() error {
+		if s.config != nil {
 			return nil
 		}
 		return errors.New("Config not loaded")
-	}, time.Duration(s.cfg.Probes.CheckIntervalSeconds)*time.Second))
+	}, time.Duration(s.config.Probes.CheckIntervalSeconds)*time.Second))
 
 	go func() {
-		s.log.Infof("API_Gateway Kubernetes probes listening on port: %s", s.cfg.Probes.Port)
-		if err := http.ListenAndServe(s.cfg.Probes.Port, health); err != nil {
+		s.log.Infof("API_Gateway Kubernetes probes listening on port: %s", s.config.Probes.Port)
+		if err := http.ListenAndServe(s.config.Probes.Port, health); err != nil {
 			s.log.WarnMsg("ListenAndServe", err)
 		}
 	}()
@@ -35,19 +35,18 @@ func (s *server) runMetrics(cancel context.CancelFunc) {
 	metricsServer := fiber.New()
 	metricsServer.Use(recover.New(recover.Config{
 		EnableStackTrace: false,
-		StackSize:        stackSize,
 	}))
 
 	go func() {
 		// Convert Prometheus HTTP handler to Fiber handler
 		promHandler := fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler())
-		metricsServer.Get(s.cfg.Probes.PrometheusPath, func(c *fiber.Ctx) error {
+		metricsServer.Get(s.config.Probes.PrometheusPath, func(c *fiber.Ctx) error {
 			promHandler(c.Context())
 			return nil
 		})
 
-		s.log.Infof("Metrics server is running on port: %s", s.cfg.Probes.PrometheusPort)
-		if err := metricsServer.Listen(s.cfg.Probes.PrometheusPort); err != nil {
+		s.log.Infof("Metrics server is running on port: %s", s.config.Probes.PrometheusPort)
+		if err := metricsServer.Listen(s.config.Probes.PrometheusPort); err != nil {
 			s.log.Errorf("metricsServer.Listen: %v", err)
 			cancel()
 		}

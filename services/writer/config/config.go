@@ -27,10 +27,10 @@ type Config struct {
 	Logger      *logger.Config   `mapstructure:"logger"`
 	KafkaTopics KafkaTopics      `mapstructure:"kafkaTopics"`
 	GRPC        GRPC             `mapstructure:"grpc"`
-	Postgresql  *postgres.Config `mapstructure:"postgres"`
+	Postgres    *postgres.Config `mapstructure:"postgres"`
 	Kafka       *kafka.Config    `mapstructure:"kafka"`
 	Probes      probes.Config    `mapstructure:"probes"`
-	Jaeger      *tracing.Config  `mapstructure:"jaeger"`
+	OTLP        *tracing.Config  `mapstructure:"otlp"`
 }
 
 type GRPC struct {
@@ -49,7 +49,7 @@ type KafkaTopics struct {
 
 func InitConfig() (*Config, error) {
 	if configPath == "" {
-		configPathFromEnv := os.Getenv(constants.ConfigPath)
+		configPathFromEnv := os.Getenv(constants.CONFIG_PATH)
 		if configPathFromEnv != "" {
 			configPath = configPathFromEnv
 		} else {
@@ -63,7 +63,7 @@ func InitConfig() (*Config, error) {
 
 	cfg := &Config{}
 
-	viper.SetConfigType(constants.Yaml)
+	viper.SetConfigType(constants.YAML)
 	viper.SetConfigFile(configPath)
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -74,24 +74,24 @@ func InitConfig() (*Config, error) {
 		return nil, errors.Wrap(err, "viper.Unmarshal")
 	}
 
-	grpcPort := os.Getenv(constants.GrpcPort)
+	grpcPort := os.Getenv(constants.GRPC_PORT)
 	if grpcPort != "" {
 		cfg.GRPC.Port = grpcPort
 	}
 
-	postgresHost := os.Getenv(constants.PostgresqlHost)
+	postgresHost := os.Getenv(constants.POSTGRES_HOST)
 	if postgresHost != "" {
-		cfg.Postgresql.Host = postgresHost
+		cfg.Postgres.Host = postgresHost
 	}
-	postgresPort := os.Getenv(constants.PostgresqlPort)
+	postgresPort := os.Getenv(constants.POSTGRES_PORT)
 	if postgresPort != "" {
-		cfg.Postgresql.Port = postgresPort
+		cfg.Postgres.Port = postgresPort
 	}
-	jaegerAddr := os.Getenv(constants.JaegerHostPort)
-	if jaegerAddr != "" {
-		cfg.Jaeger.HostPort = jaegerAddr
+	otlpEndpoint := os.Getenv(constants.OTLP_ENDPOINT)
+	if otlpEndpoint != "" {
+		cfg.OTLP.Endpoint = otlpEndpoint
 	}
-	kafkaBrokers := os.Getenv(constants.KafkaBrokers)
+	kafkaBrokers := os.Getenv(constants.KAFKA_BROKERS)
 	if kafkaBrokers != "" {
 		cfg.Kafka.Brokers = []string{kafkaBrokers}
 	}

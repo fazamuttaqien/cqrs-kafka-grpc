@@ -29,7 +29,7 @@ type Config struct {
 	Grpc        Grpc            `mapstructure:"grpc"`
 	Kafka       *kafka.Config   `mapstructure:"kafka"`
 	Probes      probes.Config   `mapstructure:"probes"`
-	Jaeger      *tracing.Config `mapstructure:"jaeger"`
+	OTLP        *tracing.Config `mapstructure:"otlp"`
 }
 
 type Http struct {
@@ -55,7 +55,7 @@ type KafkaTopics struct {
 
 func InitConfig() (*Config, error) {
 	if configPath == "" {
-		configPathFromEnv := os.Getenv(constants.ConfigPath)
+		configPathFromEnv := os.Getenv(constants.CONFIG_PATH)
 		if configPathFromEnv != "" {
 			configPath = configPathFromEnv
 		} else {
@@ -69,7 +69,7 @@ func InitConfig() (*Config, error) {
 
 	cfg := &Config{}
 
-	viper.SetConfigType(constants.Yaml)
+	viper.SetConfigType(constants.YAML)
 	viper.SetConfigFile(configPath)
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -80,19 +80,22 @@ func InitConfig() (*Config, error) {
 		return nil, errors.Wrap(err, "viper.Unmarshal")
 	}
 
-	httpPort := os.Getenv(constants.HttpPort)
+	httpPort := os.Getenv(constants.HTTP_PORT)
 	if httpPort != "" {
 		cfg.Http.Port = httpPort
 	}
-	kafkaBrokers := os.Getenv(constants.KafkaBrokers)
+
+	kafkaBrokers := os.Getenv(constants.KAFKA_BROKERS)
 	if kafkaBrokers != "" {
 		cfg.Kafka.Brokers = []string{kafkaBrokers}
 	}
-	jaegerAddr := os.Getenv(constants.JaegerHostPort)
-	if jaegerAddr != "" {
-		cfg.Jaeger.HostPort = jaegerAddr
+
+	otlpEndpoint := os.Getenv(constants.OTLP_ENDPOINT)
+	if otlpEndpoint != "" {
+		cfg.OTLP.Endpoint = otlpEndpoint
 	}
-	readerServicePort := os.Getenv(constants.ReaderServicePort)
+
+	readerServicePort := os.Getenv(constants.READER_SERVICE_PORT)
 	if readerServicePort != "" {
 		cfg.Grpc.ReaderServicePort = readerServicePort
 	}

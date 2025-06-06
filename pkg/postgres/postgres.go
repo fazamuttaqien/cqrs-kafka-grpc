@@ -27,7 +27,7 @@ const (
 	minConns          = 10
 )
 
-func NewPgx(cfg *Config) (*pgxpool.Pool, error) {
+func NewPgxConnection(cfg *Config) (*pgxpool.Pool, error) {
 	ctx := context.Background()
 	dataSourceName := fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s",
 		cfg.Host,

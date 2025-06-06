@@ -10,7 +10,7 @@ import (
 )
 
 type MiddlewareManager interface {
-	RequestLoggerMiddleware(ctx *fiber.Ctx) error
+	RequestLoggerMiddleware() fiber.Handler
 }
 
 type middlewareManager struct {

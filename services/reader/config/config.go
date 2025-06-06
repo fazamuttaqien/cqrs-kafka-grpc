@@ -13,7 +13,7 @@ import (
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/probes"
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/redis"
 	"github.com/fazamuttaqien/cqrs-kafka-grpc/pkg/tracing"
-	
+
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 )
@@ -24,19 +24,19 @@ func init() {
 	flag.StringVar(&configPath, "config", "", "Reader microservice config path")
 }
 
-type Config struct {	
-	ServiceName      string              `mapstructure:"serviceName"`
-	Logger           *logger.Config      `mapstructure:"logger"`
-	KafkaTopics      KafkaTopics         `mapstructure:"kafkaTopics"`
-	GRPC             GRPC                `mapstructure:"grpc"`
-	Postgresql       *postgres.Config    `mapstructure:"postgres"`
+type Config struct {
+	ServiceName      string               `mapstructure:"serviceName"`
+	Logger           *logger.Config       `mapstructure:"logger"`
+	KafkaTopics      KafkaTopics          `mapstructure:"kafkaTopics"`
+	GRPC             GRPC                 `mapstructure:"grpc"`
+	Postgres       *postgres.Config     `mapstructure:"postgres"`
 	Kafka            *kafka_client.Config `mapstructure:"kafka"`
-	Mongo            *mongodb.Config     `mapstructure:"mongo"`
-	Redis            *redis.Config       `mapstructure:"redis"`
-	MongoCollections MongoCollections    `mapstructure:"mongoCollections"`
-	Probes           probes.Config       `mapstructure:"probes"`
-	ServiceSettings  ServiceSettings     `mapstructure:"serviceSettings"`
-	Jaeger           *tracing.Config     `mapstructure:"jaeger"`
+	Mongo            *mongodb.Config      `mapstructure:"mongo"`
+	Redis            *redis.Config        `mapstructure:"redis"`
+	MongoCollections MongoCollections     `mapstructure:"mongoCollections"`
+	Probes           probes.Config        `mapstructure:"probes"`
+	ServiceSettings  ServiceSettings      `mapstructure:"serviceSettings"`
+	OTLP             *tracing.Config      `mapstructure:"otlp"`
 }
 
 type GRPC struct {
@@ -60,7 +60,7 @@ type ServiceSettings struct {
 
 func InitConfig() (*Config, error) {
 	if configPath == "" {
-		configPathFromEnv := os.Getenv(constants.ConfigPath)
+		configPathFromEnv := os.Getenv(constants.CONFIG_PATH)
 		if configPathFromEnv != "" {
 			configPath = configPathFromEnv
 		} else {
@@ -74,7 +74,7 @@ func InitConfig() (*Config, error) {
 
 	cfg := &Config{}
 
-	viper.SetConfigType(constants.Yaml)
+	viper.SetConfigType(constants.YAML)
 	viper.SetConfigFile(configPath)
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -85,42 +85,31 @@ func InitConfig() (*Config, error) {
 		return nil, errors.Wrap(err, "viper.Unmarshal")
 	}
 
-	grpcPort := os.Getenv(constants.GrpcPort)
+	grpcPort := os.Getenv(constants.GRPC_PORT)
 	if grpcPort != "" {
 		cfg.GRPC.Port = grpcPort
 	}
-	postgresHost := os.Getenv(constants.PostgresqlHost)
+	postgresHost := os.Getenv(constants.POSTGRES_HOST)
 	if postgresHost != "" {
-		cfg.Postgresql.Host = postgresHost
+		cfg.Postgres.Host = postgresHost
 	}
-	postgresPort := os.Getenv(constants.PostgresqlPort)
+	postgresPort := os.Getenv(constants.POSTGRES_PORT)
 	if postgresPort != "" {
-		cfg.Postgresql.Port = postgresPort
+		cfg.Postgres.Port = postgresPort
 	}
-	mongoURI := os.Getenv(constants.MongoDbURI)
+	mongoURI := os.Getenv(constants.MONGO_URI)
 	if mongoURI != "" {
 		//cfg.Mongo.URI = "mongodb://host.docker.internal:27017"
 		cfg.Mongo.URI = mongoURI
 	}
-	redisAddr := os.Getenv(constants.RedisAddr)
+	redisAddr := os.Getenv(constants.REDIS_ADDR)
 	if redisAddr != "" {
 		cfg.Redis.Addr = redisAddr
 	}
-	//jaegerAddr := os.Getenv("JAEGER_HOST")
-	//if jaegerAddr != "" {
-	//	cfg.Jaeger.HostPort = jaegerAddr
-	//}
-	//kafkaBrokers := os.Getenv("KAFKA_BROKERS")
-	//if kafkaBrokers != "" {
-	//	cfg.Kafka.Brokers = []string{"host.docker.internal:9092"}
-	//}
-	kafkaBrokers := os.Getenv(constants.KafkaBrokers)
+
+	kafkaBrokers := os.Getenv(constants.KAFKA_BROKERS)
 	if kafkaBrokers != "" {
 		cfg.Kafka.Brokers = []string{kafkaBrokers}
-	}
-	jaegerAddr := os.Getenv(constants.JaegerHostPort)
-	if jaegerAddr != "" {
-		cfg.Jaeger.HostPort = jaegerAddr
 	}
 
 	return cfg, nil

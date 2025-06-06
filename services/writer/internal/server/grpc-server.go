@@ -4,7 +4,7 @@ import (
 	"net"
 	"time"
 
-	grpc2 "github.com/fazamuttaqien/cqrs-kafka-grpc/services/writer/internal/product/delivery/grpc"
+	delivery_grpc "github.com/fazamuttaqien/cqrs-kafka-grpc/services/writer/internal/product/delivery/grpc"
 	pb_writer "github.com/fazamuttaqien/cqrs-kafka-grpc/services/writer/proto/product_writer"
 
 	"github.com/pkg/errors"
@@ -26,7 +26,7 @@ const (
 )
 
 func (s *server) newWriterGrpcServer() (func() error, *grpc.Server, error) {
-	l, err := net.Listen("tcp", s.cfg.GRPC.Port)
+	l, err := net.Listen("tcp", s.config.GRPC.Port)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "net.Listen")
 	}
@@ -43,21 +43,21 @@ func (s *server) newWriterGrpcServer() (func() error, *grpc.Server, error) {
 			grpc_opentracing.UnaryServerInterceptor(),
 			grpc_prometheus.UnaryServerInterceptor,
 			grpc_recovery.UnaryServerInterceptor(),
-			s.im.Logger,
+			s.interceptorManager.Logger,
 		),
 		),
 	)
 
-	writerGrpcWriter := grpc2.NewWriterGrpcService(s.log, s.cfg, s.v, s.ps, s.metrics)
+	writerGrpcWriter := delivery_grpc.NewWriterGrpcService(s.log, s.config, s.validate, s.productService, s.metrics)
 	pb_writer.RegisterWriterServiceServer(grpcServer, writerGrpcWriter)
 	grpc_prometheus.Register(grpcServer)
 
-	if s.cfg.GRPC.Development {
+	if s.config.GRPC.Development {
 		reflection.Register(grpcServer)
 	}
 
 	go func() {
-		s.log.Infof("Writer gRPC server is listening on port: %s", s.cfg.GRPC.Port)
+		s.log.Infof("Writer gRPC server is listening on port: %s", s.config.GRPC.Port)
 		s.log.Fatal(grpcServer.Serve(l))
 	}()
 

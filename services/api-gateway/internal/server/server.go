@@ -23,42 +23,50 @@ import (
 )
 
 type server struct {
-	log   logger.Logger
-	cfg   *config.Config
-	v     *validator.Validate
-	mw    middlewares.MiddlewareManager
-	im    interceptors.InterceptorManager
-	fiber *fiber.App
-	ps    *service.ProductService
-	m     *metrics.ApiGatewayMetrics
+	log                logger.Logger
+	config             *config.Config
+	validate           *validator.Validate
+	middlewareManager  middlewares.MiddlewareManager
+	interceptorManager interceptors.InterceptorManager
+	fiber              *fiber.App
+	productService     *service.ProductService
+	metrics            *metrics.ApiGatewayMetrics
 }
 
 func NewServer(log logger.Logger, cfg *config.Config) *server {
-	return &server{log: log, cfg: cfg, fiber: fiber.New(), v: validator.New()}
+	return &server{log: log, config: cfg, fiber: fiber.New(), validate: validator.New()}
 }
 
 func (s *server) Run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	s.mw = middlewares.NewMiddlewareManager(s.log, s.cfg)
-	s.im = interceptors.NewInterceptorManager(s.log)
-	s.m = metrics.NewApiGatewayMetrics(s.cfg)
-
-	readerServiceConn, err := client.NewReaderServiceConn(ctx, s.cfg, s.im)
+	tracer, err := tracing.NewOTLPTracerProvider(s.config.OTLP)
 	if err != nil {
 		return err
 	}
-	defer readerServiceConn.Close() // nolint: errcheck
-	rsClient := pb_reader.NewReaderServiceClient(readerServiceConn)
+	defer tracer.Shutdown(ctx) // nolint: errcheck
 
-	kafkaProducer := kafka.NewProducer(s.log, s.cfg.Kafka.Brokers)
+	s.middlewareManager = middlewares.NewMiddlewareManager(s.log, s.config)
+	s.interceptorManager = interceptors.NewInterceptorManager(s.log)
+	s.metrics = metrics.NewApiGatewayMetrics(s.config)
+
+	readerServiceConnection, err := client.NewReaderServiceConn(ctx, s.config, s.interceptorManager)
+	if err != nil {
+		return err
+	}
+	defer readerServiceConnection.Close() // nolint: errcheck
+	readerServiceClient := pb_reader.NewReaderServiceClient(readerServiceConnection)
+
+	kafkaProducer := kafka.NewProducer(s.log, s.config.Kafka.Brokers)
 	defer kafkaProducer.Close() // nolint: errcheck
 
-	s.ps = service.NewProductService(s.log, s.cfg, kafkaProducer, rsClient)
+	s.productService = service.NewProductService(
+		s.log, s.config, kafkaProducer, readerServiceClient, tracer.GetTracer())
 
 	productHandlers := v1.NewProductsHandlers(
-		s.fiber.Group(s.cfg.Http.ProductsPath), s.log, s.mw, s.cfg, s.ps, s.v, s.m)
+		s.fiber.Group(s.config.Http.ProductsPath).(*fiber.Group),
+		s.log, s.middlewareManager, s.config, s.productService, s.validate, s.metrics, tracer.GetTracer())
 	productHandlers.MapRoutes()
 
 	go func() {
@@ -67,22 +75,14 @@ func (s *server) Run() error {
 			cancel()
 		}
 	}()
-	s.log.Infof("API Gateway is listening on PORT: %s", s.cfg.Http.Port)
+	s.log.Infof("API Gateway is listening on PORT: %s", s.config.Http.Port)
 
 	s.runMetrics(cancel)
 	s.runHealthCheck(ctx)
 
-	if s.cfg.Jaeger.Enable {
-		tracer, err := tracing.NewJaegerTracerProvider(s.cfg.Jaeger)
-		if err != nil {
-			return err
-		}
-		defer tracer.Shutdown(ctx) // nolint: errcheck
-	}
-
 	<-ctx.Done()
 	if err := s.fiber.Server().Shutdown(); err != nil {
-		s.log.WarnMsg("echo.Server.Shutdown", err)
+		s.log.WarnMsg("fiber.Server.Shutdown", err)
 	}
 
 	return nil

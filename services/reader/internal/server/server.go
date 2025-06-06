@@ -26,29 +26,35 @@ import (
 )
 
 type server struct {
-	log         logger.Logger
-	cfg         *config.Config
-	v           *validator.Validate
-	kafkaConn   *kafka.Conn
-	im          interceptors.InterceptorManager
-	mongoClient *mongo.Client
-	redisClient redis.UniversalClient
-	ps          *service.ProductService
-	metrics     *metrics.ReaderServiceMetrics
+	log                logger.Logger
+	config             *config.Config
+	validate           *validator.Validate
+	kafkaConnection    *kafka.Conn
+	interceptorManager interceptors.InterceptorManager
+	mongoClient        *mongo.Client
+	redisClient        redis.UniversalClient
+	productService     *service.ProductService
+	metrics            *metrics.ReaderServiceMetrics
 }
 
 func NewServer(log logger.Logger, cfg *config.Config) *server {
-	return &server{log: log, cfg: cfg, v: validator.New()}
+	return &server{log: log, config: cfg, validate: validator.New()}
 }
 
 func (s *server) Run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	s.im = interceptors.NewInterceptorManager(s.log)
-	s.metrics = metrics.NewReaderServiceMetrics(s.cfg)
+	tracer, err := tracing.NewOTLPTracerProvider(s.config.OTLP)
+	if err != nil {
+		return err
+	}
+	defer tracer.Shutdown(ctx) // nolint: errcheck
 
-	mongoConnection, err := mongodb.NewMongoConnection(ctx, s.cfg.Mongo)
+	s.interceptorManager = interceptors.NewInterceptorManager(s.log)
+	s.metrics = metrics.NewReaderServiceMetrics(s.config)
+
+	mongoConnection, err := mongodb.NewMongoConnection(ctx, s.config.Mongo)
 	if err != nil {
 		return errors.Wrap(err, "NewMongoDBConn")
 	}
@@ -56,36 +62,30 @@ func (s *server) Run() error {
 	defer mongoConnection.Disconnect(ctx) // nolint: errcheck
 	s.log.Infof("Mongo connected: %v", mongoConnection.NumberSessionsInProgress())
 
-	s.redisClient = redis_client.NewUniversalRedisClient(s.cfg.Redis)
+	s.redisClient = redis_client.NewUniversalRedisClient(s.config.Redis)
 	defer s.redisClient.Close() // nolint: errcheck
 	s.log.Infof("Redis connected: %+v", s.redisClient.PoolStats())
 
-	mongoRepository := repository.NewMongoRepository(s.log, s.cfg, s.mongoClient)
-	redisCache := repository.NewRedisRepository(s.log, s.cfg, s.redisClient)
+	mongoRepository := repository.NewMongoRepository(s.log, s.config, s.mongoClient, tracer.GetTracer())
+	redisCache := repository.NewRedisRepository(s.log, s.config, s.redisClient, tracer.GetTracer())
 
-	s.ps = service.NewProductService(s.log, s.cfg, mongoRepository, redisCache)
+	s.productService = service.NewProductService(
+		s.log, s.config, mongoRepository, redisCache, tracer.GetTracer())
 
-	readerMessageProcessor := reader_kafka.NewReaderMessageProcessor(s.log, s.cfg, s.v, s.ps, s.metrics)
+	readerMessageProcessor := reader_kafka.NewReaderMessageProcessor(
+		s.log, s.config, s.validate, s.productService, s.metrics)
 
 	s.log.Info("Starting Reader Kafka consumers")
-	cg := kafka_client.NewConsumerGroup(s.cfg.Kafka.Brokers, s.cfg.Kafka.GroupID, s.log)
+	cg := kafka_client.NewConsumerGroup(s.config.Kafka.Brokers, s.config.Kafka.GroupID, s.log)
 	go cg.ConsumeTopic(ctx, s.getConsumerGroupTopics(), reader_kafka.PoolSize, readerMessageProcessor.ProcessMessages)
 
 	if err := s.connectKafkaBrokers(ctx); err != nil {
 		return errors.Wrap(err, "s.connectKafkaBrokers")
 	}
-	defer s.kafkaConn.Close() // nolint: errcheck
+	defer s.kafkaConnection.Close() // nolint: errcheck
 
 	s.runHealthCheck(ctx)
 	s.runMetrics(cancel)
-
-	if s.cfg.Jaeger.Enable {
-		tracer, err := tracing.NewJaegerTracerProvider(s.cfg.Jaeger)
-		if err != nil {
-			return err
-		}
-		defer tracer.Shutdown(ctx) // nolint: errcheck
-	}
 
 	closeGrpcServer, grpcServer, err := s.newReaderGrpcServer()
 	if err != nil {

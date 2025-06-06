@@ -24,44 +24,50 @@ import (
 )
 
 type server struct {
-	log             logger.Logger
-	cfg             *config.Config
-	v               *validator.Validate
-	kafkaConnection *kafka.Conn
-	ps              *service.ProductService
-	im              interceptors.InterceptorManager
-	pgxPool         *pgxpool.Pool
-	metrics         *metrics.WriterServiceMetrics
+	log                logger.Logger
+	config             *config.Config
+	validate           *validator.Validate
+	kafkaConnection    *kafka.Conn
+	productService     *service.ProductService
+	interceptorManager interceptors.InterceptorManager
+	pgxPool            *pgxpool.Pool
+	metrics            *metrics.WriterServiceMetrics
 }
 
 func NewServer(log logger.Logger, cfg *config.Config) *server {
-	return &server{log: log, cfg: cfg, v: validator.New()}
+	return &server{log: log, config: cfg, validate: validator.New()}
 }
 
 func (s *server) Run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	s.im = interceptors.NewInterceptorManager(s.log)
-	s.metrics = metrics.NewWriterServiceMetrics(s.cfg)
-
-	pgxPool, err := postgres.NewPgx(s.cfg.Postgresql)
+	tracer, err := tracing.NewOTLPTracerProvider(s.config.OTLP)
 	if err != nil {
-		return errors.Wrap(err, "postgresql.NewPgxConn")
+		return err
+	}
+	defer tracer.Shutdown(ctx) // nolint: errcheck
+
+	s.interceptorManager = interceptors.NewInterceptorManager(s.log)
+	s.metrics = metrics.NewWriterServiceMetrics(s.config)
+
+	pgxPool, err := postgres.NewPgxConnection(s.config.Postgres)
+	if err != nil {
+		return errors.Wrap(err, "postgresql.NewPgxConnection")
 	}
 	s.pgxPool = pgxPool
 	s.log.Infof("postgres connected: %v", pgxPool.Stat().TotalConns())
 	defer pgxPool.Close()
 
-	kafkaProducer := kafka_client.NewProducer(s.log, s.cfg.Kafka.Brokers)
+	kafkaProducer := kafka_client.NewProducer(s.log, s.config.Kafka.Brokers)
 	defer kafkaProducer.Close() // nolint: errcheck
 
-	productRepository := repository.NewProductRepository(s.log, s.cfg, pgxPool)
-	s.ps = service.NewProductService(s.log, s.cfg, productRepository, kafkaProducer)
-	productMessageProcessor := kafka_consumer.NewProductMessageProcessor(s.log, s.cfg, s.v, s.ps, s.metrics)
+	productRepository := repository.NewProductRepository(s.log, s.config, pgxPool, tracer.GetTracer())
+	s.productService = service.NewProductService(s.log, s.config, productRepository, kafkaProducer, tracer.GetTracer())
+	productMessageProcessor := kafka_consumer.NewProductMessageProcessor(s.log, s.config, s.validate, s.productService, s.metrics)
 
 	s.log.Info("Starting Writer Kafka consumers")
-	cg := kafka_client.NewConsumerGroup(s.cfg.Kafka.Brokers, s.cfg.Kafka.GroupID, s.log)
+	cg := kafka_client.NewConsumerGroup(s.config.Kafka.Brokers, s.config.Kafka.GroupID, s.log)
 	go cg.ConsumeTopic(ctx, s.getConsumerGroupTopics(), kafka_consumer.PoolSize, productMessageProcessor.ProcessMessages)
 
 	closeGrpcServer, grpcServer, err := s.newWriterGrpcServer()
@@ -75,20 +81,12 @@ func (s *server) Run() error {
 	}
 	defer s.kafkaConnection.Close() // nolint: errcheck
 
-	if s.cfg.Kafka.InitTopics {
+	if s.config.Kafka.InitTopics {
 		s.initKafkaTopics(ctx)
 	}
 
 	s.runHealthCheck(ctx)
 	s.runMetrics(cancel)
-
-	if s.cfg.Jaeger.Enable {
-		tracer, err := tracing.NewJaegerTracerProvider(s.cfg.Jaeger)
-		if err != nil {
-			return err
-		}
-		defer tracer.Shutdown(ctx) // nolint: errcheck
-	}
 
 	<-ctx.Done()
 	grpcServer.GracefulStop()
